@@ -1,5 +1,7 @@
 import os
 import pathlib
+import logging
+import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, APIRouter
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +12,7 @@ load_dotenv()
 
 API_TOKEN = os.getenv("API_TOKEN")
 MOCK = os.getenv("MOCK", "true").lower() == "true"
+NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
 
 if not MOCK:
     import RPi.GPIO as GPIO
@@ -22,6 +25,29 @@ security = HTTPBearer()
 
 # Mock state (only used when MOCK=true)
 _mock_state = {"status": "closed"}
+
+# --- Logging ---
+REPO_DIR = pathlib.Path(__file__).parent.parent
+log_path = REPO_DIR / "garage.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.FileHandler(log_path),
+        logging.StreamHandler(),
+    ],
+)
+logger = logging.getLogger(__name__)
+
+
+def notify(message: str):
+    if not NTFY_TOPIC:
+        return
+    try:
+        requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=message, timeout=5)
+    except Exception as e:
+        logger.error(f"ntfy notification failed: {e}")
 
 
 def verify_token(credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]):
@@ -57,13 +83,18 @@ def health():
 
 @router.get("/status", dependencies=[Depends(verify_token)])
 def get_status():
-    return {"state": read_door_state()}
+    state = read_door_state()
+    logger.info(f"status checked — door is {state}")
+    return {"state": state}
 
 
 @router.post("/trigger", dependencies=[Depends(verify_token)])
 def trigger_door():
     pulse_relay()
-    return {"triggered": True, "state": read_door_state()}
+    state = read_door_state()
+    logger.info(f"door triggered — now {state}")
+    notify(f"Garage door triggered — now {state.upper()}")
+    return {"triggered": True, "state": state}
 
 
 app.include_router(router)
