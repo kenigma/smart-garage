@@ -4,7 +4,7 @@
 
 set -e
 
-REPO_DIR="$HOME/smart-garage"
+REPO_DIR="$HOME/projects/smart-garage"
 VENV_DIR="$REPO_DIR/venv"
 SERVICE_NAME="smart-garage"
 
