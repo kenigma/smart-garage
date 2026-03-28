@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#1a1a2e" />
+  <link rel="manifest" href="/manifest.json" />
+  <title>Smart Garage</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2rem;
+      padding: 2rem;
+    }
+
+    h1 { font-size: 1.4rem; letter-spacing: 0.05em; opacity: 0.7; }
+
+    #status-indicator {
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      transition: background 0.4s, color 0.4s;
+      background: #333;
+    }
+    #status-indicator.open  { background: #e74c3c; color: #fff; }
+    #status-indicator.closed { background: #27ae60; color: #fff; }
+
+    #trigger-btn {
+      width: 200px;
+      height: 64px;
+      border-radius: 32px;
+      border: none;
+      background: #4a90e2;
+      color: #fff;
+      font-size: 1.2rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #trigger-btn:active { transform: scale(0.96); }
+    #trigger-btn:disabled { opacity: 0.4; cursor: default; }
+
+    #error-msg {
+      color: #e74c3c;
+      font-size: 0.9rem;
+      min-height: 1.2em;
+      text-align: center;
+    }
+
+    /* Token setup screen */
+    #setup {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      width: 100%;
+      max-width: 320px;
+    }
+    #setup label { font-size: 0.9rem; opacity: 0.7; }
+    #setup input {
+      padding: 0.75rem 1rem;
+      border-radius: 12px;
+      border: 1px solid #444;
+      background: #2a2a3e;
+      color: #eee;
+      font-size: 1rem;
+      width: 100%;
+    }
+    #setup button {
+      padding: 0.75rem;
+      border-radius: 12px;
+      border: none;
+      background: #4a90e2;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- Token setup (shown on first run) -->
+  <div id="setup">
+    <h1>Smart Garage Setup</h1>
+    <label for="token-input">API Token</label>
+    <input id="token-input" type="password" placeholder="Paste your API token" autocomplete="off" />
+    <button id="save-token-btn">Save &amp; Connect</button>
+    <div id="setup-error" class="hidden" style="color:#e74c3c;font-size:0.9rem;"></div>
+  </div>
+
+  <!-- Main UI (hidden until token is set) -->
+  <div id="main" class="hidden">
+    <h1>GARAGE</h1>
+    <div id="status-indicator">...</div>
+    <button id="trigger-btn">TRIGGER</button>
+    <div id="error-msg"></div>
+    <button id="logout-btn" style="background:none;border:none;color:#666;font-size:0.8rem;cursor:pointer;margin-top:1rem;">
+      Change token
+    </button>
+  </div>
+
+  <script>
+    const POLL_INTERVAL = 5000;
+    let token = localStorage.getItem('garage_token');
+    let polling;
+
+    const setupEl   = document.getElementById('setup');
+    const mainEl    = document.getElementById('main');
+    const indicator = document.getElementById('status-indicator');
+    const triggerBtn = document.getElementById('trigger-btn');
+    const errorMsg  = document.getElementById('error-msg');
+    const tokenInput = document.getElementById('token-input');
+    const setupError = document.getElementById('setup-error');
+
+    async function apiRequest(path, method = 'GET') {
+      const res = await fetch(`/api${path}`, {
+        method,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    async function refreshStatus() {
+      try {
+        const data = await apiRequest('/status');
+        const state = data.state;
+        indicator.textContent = state.toUpperCase();
+        indicator.className = state;
+        errorMsg.textContent = '';
+      } catch (e) {
+        errorMsg.textContent = 'Could not reach garage server.';
+      }
+    }
+
+    async function handleTrigger() {
+      triggerBtn.disabled = true;
+      try {
+        const data = await apiRequest('/trigger', 'POST');
+        const state = data.state;
+        indicator.textContent = state.toUpperCase();
+        indicator.className = state;
+        errorMsg.textContent = '';
+      } catch (e) {
+        errorMsg.textContent = 'Trigger failed.';
+      } finally {
+        triggerBtn.disabled = false;
+      }
+    }
+
+    function showMain() {
+      setupEl.classList.add('hidden');
+      mainEl.classList.remove('hidden');
+      refreshStatus();
+      polling = setInterval(refreshStatus, POLL_INTERVAL);
+    }
+
+    function showSetup() {
+      clearInterval(polling);
+      mainEl.classList.add('hidden');
+      setupEl.classList.remove('hidden');
+    }
+
+    document.getElementById('save-token-btn').addEventListener('click', async () => {
+      const val = tokenInput.value.trim();
+      if (!val) return;
+      setupError.classList.add('hidden');
+      try {
+        const res = await fetch('/api/status', {
+          headers: { Authorization: `Bearer ${val}` },
+        });
+        if (res.status === 401) throw new Error('Invalid token');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        token = val;
+        localStorage.setItem('garage_token', token);
+        showMain();
+      } catch (e) {
+        setupError.textContent = e.message === 'Invalid token' ? 'Invalid token — try again.' : 'Could not connect to server.';
+        setupError.classList.remove('hidden');
+      }
+    });
+
+    triggerBtn.addEventListener('click', handleTrigger);
+    document.getElementById('logout-btn').addEventListener('click', () => {
+      localStorage.removeItem('garage_token');
+      token = null;
+      showSetup();
+    });
+
+    // Register service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js');
+    }
+
+    // Start
+    if (token) {
+      showMain();
+    }
+  </script>
+</body>
+</html>
