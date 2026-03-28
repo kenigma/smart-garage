@@ -5,11 +5,15 @@
 set -e
 
 REPO_DIR="$HOME/smart-garage"
+VENV_DIR="$REPO_DIR/venv"
 SERVICE_NAME="smart-garage"
-PYTHON=$(which python3)
+
+echo "==> Creating virtual environment..."
+python3 -m venv "$VENV_DIR"
+PYTHON="$VENV_DIR/bin/python"
 
 echo "==> Installing Python dependencies..."
-pip3 install -r "$REPO_DIR/requirements.txt"
+"$VENV_DIR/bin/pip" install -r "$REPO_DIR/requirements.txt"
 
 echo "==> Checking .env file..."
 if [ ! -f "$REPO_DIR/.env" ]; then
