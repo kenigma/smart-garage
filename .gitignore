@@ -1,5 +1,7 @@
 .env
 garage.log
+garage.db
+users.json
 __pycache__/
 *.py[cod]
 *.egg-info/

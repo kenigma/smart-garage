@@ -95,6 +95,36 @@
     }
 
     .hidden { display: none !important; }
+
+    #history-section {
+      width: 100%;
+      max-width: 360px;
+      max-height: 260px;
+      overflow-y: auto;
+      border-top: 1px solid #333;
+      padding-top: 1rem;
+    }
+    #history-section h2 {
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      opacity: 0.4;
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+    }
+    .history-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.4rem 0;
+      border-bottom: 1px solid #2a2a3e;
+      font-size: 0.82rem;
+      gap: 0.5rem;
+    }
+    .history-item .h-user { color: #aaa; flex-shrink: 0; }
+    .history-item .h-state { font-weight: 700; flex-shrink: 0; }
+    .history-item .h-state.open  { color: #e74c3c; }
+    .history-item .h-state.closed { color: #27ae60; }
+    .history-item .h-time { opacity: 0.4; font-size: 0.75rem; flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -117,6 +147,10 @@
     <button id="logout-btn" style="background:none;border:none;color:#666;font-size:0.8rem;cursor:pointer;margin-top:1rem;">
       Change token
     </button>
+    <div id="history-section" class="hidden">
+      <h2>Recent Activity</h2>
+      <div id="history-list"></div>
+    </div>
   </div>
 
   <script>
@@ -153,6 +187,24 @@
       }
     }
 
+    async function fetchHistory() {
+      try {
+        const data = await apiRequest('/history?limit=20');
+        const list = document.getElementById('history-list');
+        const section = document.getElementById('history-section');
+        if (data.length === 0) { section.classList.add('hidden'); return; }
+        section.classList.remove('hidden');
+        list.innerHTML = data.map(e => {
+          const t = e.timestamp.replace('T', ' ').slice(0, 16);
+          return `<div class="history-item">
+            <span class="h-user">${e.user}</span>
+            <span class="h-state ${e.state}">${e.state.toUpperCase()}</span>
+            <span class="h-time">${t}</span>
+          </div>`;
+        }).join('');
+      } catch (_) {}
+    }
+
     async function handleTrigger() {
       triggerBtn.disabled = true;
       try {
@@ -161,6 +213,7 @@
         indicator.textContent = state.toUpperCase();
         indicator.className = state;
         errorMsg.textContent = '';
+        fetchHistory();
       } catch (e) {
         errorMsg.textContent = 'Trigger failed.';
       } finally {
@@ -172,6 +225,7 @@
       setupEl.classList.add('hidden');
       mainEl.classList.remove('hidden');
       refreshStatus();
+      fetchHistory();
       polling = setInterval(refreshStatus, POLL_INTERVAL);
     }
 
