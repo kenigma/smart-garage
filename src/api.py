@@ -103,6 +103,7 @@ def verify_token(credentials: Annotated[HTTPAuthorizationCredentials, Depends(se
 
 # --- Hardware ---
 _mock_state = {"status": "closed"}
+_trigger_time: dict = {"at": None}  # tracks last app-triggered time
 
 
 def read_door_state() -> str:
@@ -127,7 +128,11 @@ async def lifespan(app):
     import asyncio
     from src.monitor import monitor_door
     task = asyncio.create_task(
-        monitor_door(read_door_state, notify, interval_seconds=30, alert_minutes=DOOR_OPEN_ALERT_MINUTES)
+        monitor_door(
+            read_door_state, notify, _log_event,
+            lambda: _trigger_time["at"],
+            interval_seconds=30, alert_minutes=DOOR_OPEN_ALERT_MINUTES,
+        )
     )
     yield
     task.cancel()
@@ -153,12 +158,13 @@ def get_status():
 
 @router.post("/trigger")
 def trigger_door(user: str = Depends(verify_token)):
+    before_state = read_door_state()
+    logger.info(f"{user} triggered door — was {before_state}")
+    _log_event(user, "trigger", before_state)
     pulse_relay()
-    state = read_door_state()
-    logger.info(f"{user} triggered door — now {state}")
-    notify(f"{user} triggered the garage door — now {state.upper()}")
-    _log_event(user, "trigger", state)
-    return {"triggered": True, "state": state}
+    _trigger_time["at"] = datetime.utcnow()
+    logger.info("trigger done")
+    return {"triggered": True}
 
 
 @router.get("/history", dependencies=[Depends(verify_token)])

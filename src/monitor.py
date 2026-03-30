@@ -5,13 +5,19 @@ from typing import Callable
 
 logger = logging.getLogger(__name__)
 
+# State changes within this window after an app trigger are considered app-caused
+_APP_TRIGGER_WINDOW_SECONDS = 60
+
 
 async def monitor_door(
     read_state_fn: Callable[[], str],
     notify_fn: Callable[[str], None],
+    log_event_fn: Callable[[str, str, str], None],
+    get_last_trigger_fn: Callable[[], datetime | None],
     interval_seconds: int = 30,
     alert_minutes: int = 10,
 ):
+    prev_state: str | None = None
     door_opened_at: datetime | None = None
     last_alert_at: datetime | None = None
 
@@ -20,6 +26,22 @@ async def monitor_door(
             await asyncio.sleep(interval_seconds)
             state = read_state_fn()
 
+            # --- State change detection ---
+            if prev_state is not None and state != prev_state:
+                last_trigger = get_last_trigger_fn()
+                is_physical = (
+                    last_trigger is None
+                    or (datetime.utcnow() - last_trigger).total_seconds() > _APP_TRIGGER_WINDOW_SECONDS
+                )
+                source = "physical" if is_physical else "app"
+                logger.info(f"door state changed: {prev_state} → {state} ({source})")
+                log_event_fn(source, "state_change", state)
+                if is_physical:
+                    notify_fn(f"Garage door {state.upper()} (physical trigger)")
+
+            prev_state = state
+
+            # --- Open-door alert ---
             if state == "open":
                 if door_opened_at is None:
                     door_opened_at = datetime.utcnow()

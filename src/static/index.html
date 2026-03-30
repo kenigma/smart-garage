@@ -207,13 +207,18 @@
 
     async function handleTrigger() {
       triggerBtn.disabled = true;
+      indicator.textContent = '...';
+      indicator.className = '';
       try {
-        const data = await apiRequest('/trigger', 'POST');
-        const state = data.state;
-        indicator.textContent = state.toUpperCase();
-        indicator.className = state;
+        await apiRequest('/trigger', 'POST');
         errorMsg.textContent = '';
         fetchHistory();
+        // Poll a few times to pick up the real state after the door moves
+        let attempts = 0;
+        const poll = setInterval(async () => {
+          await refreshStatus();
+          if (++attempts >= 4) clearInterval(poll);
+        }, 2000);
       } catch (e) {
         errorMsg.textContent = 'Trigger failed.';
       } finally {
