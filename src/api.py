@@ -114,7 +114,10 @@ def read_door_state() -> str:
 
 def pulse_relay():
     if MOCK:
-        _mock_state["status"] = "open" if _mock_state["status"] == "closed" else "closed"
+        import threading
+        def _toggle():
+            _mock_state["status"] = "open" if _mock_state["status"] == "closed" else "closed"
+        threading.Timer(7, _toggle).start()
         return
     import time
     GPIO.output(27, GPIO.LOW)
@@ -122,20 +125,34 @@ def pulse_relay():
     GPIO.output(27, GPIO.HIGH)
 
 
-# --- Lifespan (door monitor) ---
+# --- Lifespan (door monitor + mock physical events) ---
 @asynccontextmanager
 async def lifespan(app):
     import asyncio
     from src.monitor import monitor_door
-    task = asyncio.create_task(
-        monitor_door(
-            read_door_state, notify, _log_event,
-            lambda: _trigger_time["at"],
-            interval_seconds=30, alert_minutes=DOOR_OPEN_ALERT_MINUTES,
+    tasks = [
+        asyncio.create_task(
+            monitor_door(
+                read_door_state, notify, _log_event,
+                lambda: _trigger_time["at"],
+                interval_seconds=30, alert_minutes=DOOR_OPEN_ALERT_MINUTES,
+            )
         )
-    )
+    ]
+    if MOCK:
+        tasks.append(asyncio.create_task(_mock_physical_events()))
     yield
-    task.cancel()
+    for t in tasks:
+        t.cancel()
+
+
+async def _mock_physical_events():
+    import asyncio
+    import random
+    while True:
+        await asyncio.sleep(random.randint(60, 180))
+        _mock_state["status"] = "open" if _mock_state["status"] == "closed" else "closed"
+        logger.info(f"[mock] physical event — door now {_mock_state['status']}")
 
 
 app = FastAPI(lifespan=lifespan)
