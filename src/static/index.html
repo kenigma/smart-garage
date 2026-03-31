@@ -120,11 +120,13 @@
       font-size: 0.82rem;
       gap: 0.5rem;
     }
-    .history-item .h-user { color: #aaa; flex-shrink: 0; }
-    .history-item .h-state { font-weight: 700; flex-shrink: 0; }
-    .history-item .h-state.open  { color: #e74c3c; }
+    .history-item .h-left { display: flex; align-items: center; gap: 0.25rem; flex-wrap: wrap; }
+    .history-item .h-user { color: #7eb8f7; font-weight: 600; }
+    .history-item .h-desc { color: #aaa; }
+    .history-item .h-state { font-weight: 700; }
+    .history-item .h-state.open   { color: #e74c3c; }
     .history-item .h-state.closed { color: #27ae60; }
-    .history-item .h-time { opacity: 0.4; font-size: 0.75rem; flex-shrink: 0; }
+    .history-item .h-time { opacity: 0.4; font-size: 0.75rem; flex-shrink: 0; white-space: nowrap; }
   </style>
 </head>
 <body>
@@ -195,10 +197,18 @@
         if (data.length === 0) { section.classList.add('hidden'); return; }
         section.classList.remove('hidden');
         list.innerHTML = data.map(e => {
-          const t = e.timestamp.replace('T', ' ').slice(0, 16);
+          const t = e.timestamp.slice(0, 16);
+          let label, stateClass;
+          if (e.action === 'trigger') {
+            label = `<span class="h-user">${e.user}</span> <span class="h-desc">triggered</span>`;
+            stateClass = '';
+          } else {
+            const src = e.user === 'physical' ? 'physical' : 'via app';
+            stateClass = e.state;
+            label = `<span class="h-desc">Door → </span><span class="h-state ${stateClass}">${e.state.toUpperCase()}</span><span class="h-desc"> (${src})</span>`;
+          }
           return `<div class="history-item">
-            <span class="h-user">${e.user}</span>
-            <span class="h-state ${e.state}">${e.state.toUpperCase()}</span>
+            <div class="h-left">${label}</div>
             <span class="h-time">${t}</span>
           </div>`;
         }).join('');
