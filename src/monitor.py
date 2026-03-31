@@ -6,7 +6,7 @@ from typing import Callable
 logger = logging.getLogger(__name__)
 
 # State changes within this window after an app trigger are considered app-caused
-_APP_TRIGGER_WINDOW_SECONDS = 60
+_APP_TRIGGER_WINDOW_SECONDS = 20
 
 
 async def monitor_door(
