@@ -135,7 +135,7 @@ async def lifespan(app):
             monitor_door(
                 read_door_state, notify, _log_event,
                 lambda: _trigger_time["at"],
-                interval_seconds=1, alert_minutes=DOOR_OPEN_ALERT_MINUTES,
+                interval_seconds=1, alert_minutes=DOOR_OPEN_ALERT_MINUTES, mock=MOCK,
             )
         )
     ]

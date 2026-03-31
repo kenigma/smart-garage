@@ -16,7 +16,9 @@ async def monitor_door(
     get_last_trigger_fn: Callable[[], datetime | None],
     interval_seconds: int = 30,
     alert_minutes: int = 10,
+    mock: bool = False,
 ):
+    prefix = "[MOCK] " if mock else ""
     prev_state: str | None = None
     door_opened_at: datetime | None = None
     last_alert_at: datetime | None = None
@@ -37,7 +39,7 @@ async def monitor_door(
                 logger.info(f"door state changed: {prev_state} → {state} ({source})")
                 log_event_fn(source, "state_change", state)
                 if is_physical:
-                    notify_fn(f"Garage door {state.upper()} (physical trigger)")
+                    notify_fn(f"{prefix}Garage door {state.upper()} (physical trigger)")
 
             prev_state = state
 
@@ -50,7 +52,7 @@ async def monitor_door(
                     elapsed = datetime.utcnow() - door_opened_at
                     since_last = (datetime.utcnow() - last_alert_at) if last_alert_at else elapsed
                     if elapsed >= timedelta(minutes=alert_minutes) and since_last >= timedelta(minutes=alert_minutes):
-                        notify_fn(f"Garage door has been open for {int(elapsed.total_seconds() // 60)} minutes!")
+                        notify_fn(f"{prefix}Garage door has been open for {int(elapsed.total_seconds() // 60)} minutes!")
                         logger.warning(f"Door open alert sent after {elapsed}")
                         last_alert_at = datetime.utcnow()
             else:
