@@ -177,6 +177,8 @@
       return res.json();
     }
 
+    let lastKnownState = null;
+
     async function refreshStatus() {
       try {
         const data = await apiRequest('/status');
@@ -184,6 +186,10 @@
         indicator.textContent = state.toUpperCase();
         indicator.className = state;
         errorMsg.textContent = '';
+        if (state !== lastKnownState) {
+          lastKnownState = state;
+          fetchHistory();
+        }
       } catch (e) {
         errorMsg.textContent = 'Could not reach garage server.';
       }
