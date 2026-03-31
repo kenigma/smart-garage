@@ -96,6 +96,16 @@
 
     .hidden { display: none !important; }
 
+    footer {
+      position: fixed;
+      bottom: 1rem;
+      width: 100%;
+      text-align: center;
+      font-size: 0.7rem;
+      opacity: 0.3;
+      letter-spacing: 0.05em;
+    }
+
     #history-section {
       width: 100%;
       max-width: 360px;
@@ -154,6 +164,8 @@
       <div id="history-list"></div>
     </div>
   </div>
+
+  <footer id="version-footer">Smart Garage</footer>
 
   <script>
     const POLL_INTERVAL = 5000;
@@ -281,6 +293,11 @@
       token = null;
       showSetup();
     });
+
+    // Version footer
+    fetch('/api/health').then(r => r.json()).then(d => {
+      document.getElementById('version-footer').textContent = `Smart Garage v${d.version}${d.mock ? ' (mock)' : ''}`;
+    }).catch(() => {});
 
     // Register service worker
     if ('serviceWorker' in navigator) {

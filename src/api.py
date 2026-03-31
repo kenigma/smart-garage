@@ -26,6 +26,7 @@ if not NTFY_TOPIC:
     sys.exit(1)
 
 REPO_DIR = pathlib.Path(__file__).parent.parent
+VERSION = (REPO_DIR / "VERSION").read_text().strip()
 
 # --- User loading ---
 _users_file = REPO_DIR / "users.json"
@@ -163,7 +164,7 @@ router = APIRouter(prefix="/api")
 
 @router.get("/health")
 def health():
-    return {"ok": True, "mock": MOCK}
+    return {"ok": True, "mock": MOCK, "version": VERSION}
 
 
 @router.get("/status", dependencies=[Depends(verify_token)])
