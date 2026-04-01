@@ -140,7 +140,7 @@ def _gpio_poll_thread():
     """Poll GPIO 17 every 50 ms with 500 ms debounce. Replaces add_event_detect."""
     import time as _time
     DEBOUNCE_STABLE = 10  # consecutive reads needed (~500 ms at 50 ms each)
-    GPIO.setup(17, GPIO.IN)
+    GPIO.setup(17, GPIO.IN, pull_up_down=GPIO.PUD_UP)
     raw_init = GPIO.input(17)
     last_confirmed = "open" if raw_init == GPIO.HIGH else "closed"
     logger.info(f"GPIO poll started: pin17 raw={raw_init} → initial state={last_confirmed}")
