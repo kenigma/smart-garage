@@ -39,6 +39,8 @@ else:
 if not MOCK:
     import RPi.GPIO as GPIO
     GPIO.setmode(GPIO.BCM)
+    GPIO.cleanup()  # clear any stale pin state from previous run
+    GPIO.setmode(GPIO.BCM)
     GPIO.setup(27, GPIO.OUT, initial=GPIO.HIGH)  # relay: active LOW
 
 # --- Logging ---
@@ -175,6 +177,8 @@ async def lifespan(app):
     yield
     for t in tasks:
         t.cancel()
+    if not MOCK:
+        GPIO.cleanup()
 
 
 async def _mock_physical_events():
