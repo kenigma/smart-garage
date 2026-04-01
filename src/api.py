@@ -141,19 +141,24 @@ def _gpio_poll_thread():
     import time as _time
     DEBOUNCE_STABLE = 10  # consecutive reads needed (~500 ms at 50 ms each)
     GPIO.setup(17, GPIO.IN)
-    last_confirmed = "open" if GPIO.input(17) == GPIO.HIGH else "closed"
+    raw_init = GPIO.input(17)
+    last_confirmed = "open" if raw_init == GPIO.HIGH else "closed"
+    logger.info(f"GPIO poll started: pin17 raw={raw_init} → initial state={last_confirmed}")
     candidate = last_confirmed
     count = 0
     while True:
         _time.sleep(0.05)
-        raw = "open" if GPIO.input(17) == GPIO.HIGH else "closed"
-        if raw == candidate:
+        raw = GPIO.input(17)
+        state = "open" if raw == GPIO.HIGH else "closed"
+        if state == candidate:
             count += 1
         else:
-            candidate = raw
+            logger.info(f"GPIO candidate change: {candidate} → {state} (raw={raw})")
+            candidate = state
             count = 1
         if count == DEBOUNCE_STABLE and candidate != last_confirmed:
             last_confirmed = candidate
+            logger.info(f"GPIO debounce confirmed: door is now {last_confirmed}")
             _on_state_change(last_confirmed)
 
 
