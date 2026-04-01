@@ -39,7 +39,6 @@ else:
 if not MOCK:
     import RPi.GPIO as GPIO
     GPIO.setmode(GPIO.BCM)
-    GPIO.setup(17, GPIO.IN)   # sensor: HIGH=open, LOW=closed
     GPIO.setup(27, GPIO.OUT, initial=GPIO.HIGH)  # relay: active LOW
 
 # --- Logging ---
@@ -105,12 +104,39 @@ def verify_token(credentials: Annotated[HTTPAuthorizationCredentials, Depends(se
 # --- Hardware ---
 _mock_state = {"status": "closed"}
 _trigger_time: dict = {"at": None}  # tracks last app-triggered time
+_door_state: dict = {"opened_at": None}  # tracks when door was opened (real hardware)
 
 
 def read_door_state() -> str:
     if MOCK:
         return _mock_state["status"]
     return "open" if GPIO.input(17) == GPIO.HIGH else "closed"
+
+
+def _on_gpio_event(channel):
+    """GPIO interrupt callback for real hardware — runs in RPi.GPIO thread."""
+    import time as _time
+    _time.sleep(0.1)  # let pin settle
+    state = "open" if GPIO.input(17) == GPIO.HIGH else "closed"
+    last_trigger = _trigger_time["at"]
+    is_physical = (
+        last_trigger is None
+        or (datetime.utcnow() - last_trigger).total_seconds() > 20
+    )
+    source = "physical" if is_physical else "app"
+    logger.info(f"GPIO event: door → {state} ({source})")
+    _log_event(source, "state_change", state)
+    if is_physical:
+        notify(f"Garage door {state.upper()} (physical trigger)")
+    if state == "open":
+        _door_state["opened_at"] = datetime.utcnow()
+    else:
+        _door_state["opened_at"] = None
+
+
+def _setup_gpio_sensor():
+    GPIO.setup(17, GPIO.IN)  # sensor: HIGH=open, LOW=closed
+    GPIO.add_event_detect(17, GPIO.BOTH, callback=_on_gpio_event, bouncetime=1000)
 
 
 def pulse_relay():
@@ -131,12 +157,16 @@ def pulse_relay():
 async def lifespan(app):
     import asyncio
     from src.monitor import monitor_door
+    if not MOCK:
+        _setup_gpio_sensor()
     tasks = [
         asyncio.create_task(
             monitor_door(
                 read_door_state, notify, _log_event,
                 lambda: _trigger_time["at"],
                 interval_seconds=1, alert_minutes=DOOR_OPEN_ALERT_MINUTES, mock=MOCK,
+                detect_changes=MOCK,
+                get_opened_at_fn=lambda: _door_state["opened_at"],
             )
         )
     ]
