@@ -118,11 +118,8 @@ def read_door_state() -> str:
     return "open" if GPIO.input(17) == GPIO.HIGH else "closed"
 
 
-def _on_gpio_event(channel):
-    """GPIO interrupt callback for real hardware — runs in RPi.GPIO thread."""
-    import time as _time
-    _time.sleep(0.1)  # let pin settle
-    state = "open" if GPIO.input(17) == GPIO.HIGH else "closed"
+def _on_state_change(state: str):
+    """Called when a debounced GPIO state change is confirmed."""
     last_trigger = _trigger_time["at"]
     is_physical = (
         last_trigger is None
@@ -139,13 +136,31 @@ def _on_gpio_event(channel):
         _door_state["opened_at"] = None
 
 
+def _gpio_poll_thread():
+    """Poll GPIO 17 every 50 ms with 500 ms debounce. Replaces add_event_detect."""
+    import time as _time
+    DEBOUNCE_STABLE = 10  # consecutive reads needed (~500 ms at 50 ms each)
+    GPIO.setup(17, GPIO.IN)
+    last_confirmed = "open" if GPIO.input(17) == GPIO.HIGH else "closed"
+    candidate = last_confirmed
+    count = 0
+    while True:
+        _time.sleep(0.05)
+        raw = "open" if GPIO.input(17) == GPIO.HIGH else "closed"
+        if raw == candidate:
+            count += 1
+        else:
+            candidate = raw
+            count = 1
+        if count == DEBOUNCE_STABLE and candidate != last_confirmed:
+            last_confirmed = candidate
+            _on_state_change(last_confirmed)
+
+
 def _setup_gpio_sensor():
-    GPIO.setup(17, GPIO.IN)  # sensor: HIGH=open, LOW=closed
-    try:
-        GPIO.remove_event_detect(17)
-    except Exception:
-        pass
-    GPIO.add_event_detect(17, GPIO.BOTH, callback=_on_gpio_event, bouncetime=1000)
+    import threading
+    t = threading.Thread(target=_gpio_poll_thread, daemon=True)
+    t.start()
 
 
 def pulse_relay():
@@ -185,7 +200,6 @@ async def lifespan(app):
     for t in tasks:
         t.cancel()
     if not MOCK:
-        GPIO.remove_event_detect(17)
         GPIO.cleanup()
 
 
