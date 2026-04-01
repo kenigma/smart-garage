@@ -296,7 +296,7 @@
 
     // Version footer
     fetch('/api/health').then(r => r.json()).then(d => {
-      document.getElementById('version-footer').textContent = `Smart Garage v${d.version}${d.mock ? ' (mock)' : ''}`;
+      document.getElementById('version-footer').textContent = `Smart Garage v${d.version}${d.mock ? ' (mock)' : ''}${d.test ? ' (test)' : ''}`;
     }).catch(() => {});
 
     // Register service worker

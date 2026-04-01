@@ -16,10 +16,11 @@ load_dotenv()
 
 API_TOKEN = os.getenv("API_TOKEN")
 MOCK = os.getenv("MOCK", "true").lower() == "true"
+TEST = os.getenv("TEST", "false").lower() == "true"
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
 DOOR_OPEN_ALERT_MINUTES = int(os.getenv("DOOR_OPEN_ALERT_MINUTES", "10"))
 
-if not NTFY_TOPIC:
+if not NTFY_TOPIC and not TEST:
     import sys
     logging.basicConfig(level=logging.ERROR)
     logging.error("NTFY_TOPIC is not set in .env — notifications are required. Exiting.")
@@ -85,6 +86,9 @@ _init_db()
 
 # --- ntfy ---
 def notify(message: str):
+    if TEST:
+        logger.info(f"[TEST] would notify: {message}")
+        return
     if not NTFY_TOPIC:
         return
     try:
@@ -198,7 +202,7 @@ router = APIRouter(prefix="/api")
 
 @router.get("/health")
 def health():
-    return {"ok": True, "mock": MOCK, "version": VERSION}
+    return {"ok": True, "mock": MOCK, "test": TEST, "version": VERSION}
 
 
 @router.get("/status", dependencies=[Depends(verify_token)])
