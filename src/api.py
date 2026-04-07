@@ -1,5 +1,6 @@
 import os
 import json
+import secrets
 import sqlite3
 import pathlib
 import logging
@@ -7,10 +8,14 @@ import requests
 from contextlib import asynccontextmanager
 from datetime import datetime
 from dotenv import load_dotenv
-from fastapi import FastAPI, Depends, HTTPException, APIRouter
+from fastapi import FastAPI, Depends, HTTPException, APIRouter, Query, Request
 from fastapi.staticfiles import StaticFiles
 from typing import Annotated
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from starlette.middleware.base import BaseHTTPMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 load_dotenv()
 
@@ -101,9 +106,10 @@ security = HTTPBearer()
 
 
 def verify_token(credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]) -> str:
-    if credentials.credentials not in USERS:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    return USERS[credentials.credentials]
+    for token, name in USERS.items():
+        if secrets.compare_digest(credentials.credentials, token):
+            return name
+    raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 # --- Hardware ---
@@ -221,7 +227,26 @@ async def _mock_physical_events():
         logger.info(f"[mock] physical event — door now {_mock_state['status']}")
 
 
+limiter = Limiter(key_func=get_remote_address)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'"
+        )
+        return response
+
+
 app = FastAPI(lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SecurityHeadersMiddleware)
 router = APIRouter(prefix="/api")
 
 
@@ -233,14 +258,16 @@ def health():
 
 
 @router.get("/status", dependencies=[Depends(verify_token)])
-def get_status():
+@limiter.limit("60/minute")
+def get_status(request: Request):
     state = read_door_state()
     logger.info(f"status checked — door is {state}")
     return {"state": state}
 
 
 @router.post("/trigger")
-def trigger_door(user: str = Depends(verify_token)):
+@limiter.limit("10/minute")
+def trigger_door(request: Request, user: str = Depends(verify_token)):
     before_state = read_door_state()
     logger.info(f"{user} triggered door — was {before_state}")
     _log_event(user, "trigger", before_state)
@@ -252,7 +279,7 @@ def trigger_door(user: str = Depends(verify_token)):
 
 
 @router.get("/history", dependencies=[Depends(verify_token)])
-def get_history(limit: int = 50):
+def get_history(limit: int = Query(50, ge=1, le=500)):
     con = sqlite3.connect(DB_PATH)
     rows = con.execute(
         "SELECT timestamp, user, action, state FROM events ORDER BY id DESC LIMIT ?",

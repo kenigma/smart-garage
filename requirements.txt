@@ -1,5 +1,6 @@
-fastapi
-uvicorn
-python-dotenv
-requests
-RPi.GPIO
+fastapi==0.135.3
+uvicorn==0.42.0
+python-dotenv==1.2.2
+requests==2.33.1
+slowapi==0.1.9
+RPi.GPIO==0.7.1
