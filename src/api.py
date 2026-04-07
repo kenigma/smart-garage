@@ -108,7 +108,7 @@ def verify_token(credentials: Annotated[HTTPAuthorizationCredentials, Depends(se
 
 # --- Hardware ---
 _mock_state = {"status": "closed"}
-_trigger_time: dict = {"at": None}  # tracks last app-triggered time
+_trigger_time: dict = {"at": None, "user": None}  # tracks last app-triggered time and user
 _door_state: dict = {"opened_at": None}  # tracks when door was opened (real hardware)
 
 
@@ -130,6 +130,9 @@ def _on_state_change(state: str):
     _log_event(source, "state_change", state)
     if is_physical:
         notify(f"Garage door {state.upper()} (physical trigger)")
+    else:
+        triggered_by = _trigger_time.get("user") or "app"
+        notify(f"Garage door {state.upper()} (triggered by {triggered_by})")
     if state == "open":
         _door_state["opened_at"] = datetime.utcnow()
     else:
@@ -193,6 +196,7 @@ async def lifespan(app):
             monitor_door(
                 read_door_state, notify, _log_event,
                 lambda: _trigger_time["at"],
+                get_last_trigger_user_fn=lambda: _trigger_time["user"],
                 interval_seconds=1, alert_minutes=DOOR_OPEN_ALERT_MINUTES, mock=MOCK,
                 detect_changes=MOCK,
                 get_opened_at_fn=lambda: _door_state["opened_at"],
@@ -242,6 +246,7 @@ def trigger_door(user: str = Depends(verify_token)):
     _log_event(user, "trigger", before_state)
     pulse_relay()
     _trigger_time["at"] = datetime.utcnow()
+    _trigger_time["user"] = user
     logger.info("trigger done")
     return {"triggered": True}
 

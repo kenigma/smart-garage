@@ -14,6 +14,7 @@ async def monitor_door(
     notify_fn: Callable[[str], None],
     log_event_fn: Callable[[str, str, str], None],
     get_last_trigger_fn: Callable[[], datetime | None],
+    get_last_trigger_user_fn: Callable[[], str | None] | None = None,
     interval_seconds: int = 30,
     alert_minutes: int = 10,
     mock: bool = False,
@@ -51,6 +52,9 @@ async def monitor_door(
                     log_event_fn(source, "state_change", state)
                     if is_physical:
                         notify_fn(f"{prefix}Garage door {state.upper()} (physical trigger)")
+                    else:
+                        triggered_by = (get_last_trigger_user_fn() if get_last_trigger_user_fn else None) or "app"
+                        notify_fn(f"{prefix}Garage door {state.upper()} (triggered by {triggered_by})")
 
                 prev_state = state
 
