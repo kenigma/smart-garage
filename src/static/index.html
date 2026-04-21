@@ -461,7 +461,8 @@
         if (data.length === 0) { section.classList.add('hidden'); return; }
         section.classList.remove('hidden');
         list.innerHTML = data.map(e => {
-          const t = e.timestamp.slice(0, 16);
+          const d = new Date(e.timestamp.replace(' ', 'T') + 'Z');
+          const t = d.toLocaleString([], {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
           let label, stateClass;
           if (e.action === 'trigger') {
             label = `<span class="h-user">${e.user}</span> <span class="h-desc">triggered</span>`;
