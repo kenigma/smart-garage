@@ -6,7 +6,7 @@ import pathlib
 import logging
 import requests
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, APIRouter, Query, Request
 from fastapi.staticfiles import StaticFiles
@@ -116,6 +116,16 @@ def verify_token(credentials: Annotated[HTTPAuthorizationCredentials, Depends(se
 _mock_state = {"status": "closed"}
 _trigger_time: dict = {"at": None, "user": None}  # tracks last app-triggered time and user
 _door_state: dict = {"opened_at": None}  # tracks when door was opened (real hardware)
+_snooze: dict = {"until": None}  # datetime until which "open for N min" alerts are suppressed
+
+
+def is_snoozed() -> bool:
+    until = _snooze["until"]
+    return until is not None and datetime.utcnow() < until
+
+
+def clear_snooze():
+    _snooze["until"] = None
 
 
 def read_door_state() -> str:
@@ -143,6 +153,7 @@ def _on_state_change(state: str):
         _door_state["opened_at"] = datetime.utcnow()
     else:
         _door_state["opened_at"] = None
+        clear_snooze()  # door shut — snooze shouldn't carry over to next opening
 
 
 def _gpio_poll_thread():
@@ -206,6 +217,8 @@ async def lifespan(app):
                 interval_seconds=1, alert_minutes=DOOR_OPEN_ALERT_MINUTES, mock=MOCK,
                 detect_changes=MOCK,
                 get_opened_at_fn=lambda: _door_state["opened_at"],
+                is_snoozed_fn=is_snoozed,
+                clear_snooze_fn=clear_snooze,
             )
         )
     ]
@@ -262,7 +275,9 @@ def health():
 def get_status(request: Request):
     state = read_door_state()
     logger.info(f"status checked — door is {state}")
-    return {"state": state}
+    until = _snooze["until"]
+    snoozed_until = until.strftime("%Y-%m-%d %H:%M:%S") if is_snoozed() else None
+    return {"state": state, "snoozed_until": snoozed_until}
 
 
 @router.post("/trigger")
@@ -276,6 +291,28 @@ def trigger_door(request: Request, user: str = Depends(verify_token)):
     _trigger_time["user"] = user
     logger.info("trigger done")
     return {"triggered": True}
+
+
+@router.post("/snooze")
+@limiter.limit("20/minute")
+def snooze_alerts(
+    request: Request,
+    minutes: int = Query(..., ge=1, le=720),
+    user: str = Depends(verify_token),
+):
+    until = datetime.utcnow() + timedelta(minutes=minutes)
+    _snooze["until"] = until
+    _log_event(user, "snooze", str(minutes))
+    logger.info(f"{user} snoozed open-door alerts for {minutes} min (until {until})")
+    return {"snoozed_until": until.strftime("%Y-%m-%d %H:%M:%S"), "minutes": minutes}
+
+
+@router.delete("/snooze")
+@limiter.limit("20/minute")
+def cancel_snooze(request: Request, user: str = Depends(verify_token)):
+    clear_snooze()
+    logger.info(f"{user} cancelled open-door alert snooze")
+    return {"snoozed_until": None}
 
 
 @router.get("/history", dependencies=[Depends(verify_token)])

@@ -90,6 +90,54 @@
       text-align: center;
     }
 
+    /* Snooze controls */
+    #snooze-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.6rem;
+      width: 100%;
+      max-width: 320px;
+    }
+    #snooze-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    #snooze-wrap .snooze-label {
+      font-size: 0.8rem;
+      opacity: 0.6;
+      letter-spacing: 0.03em;
+    }
+    #snooze-btns { display: flex; gap: 0.5rem; }
+    #snooze-btns button {
+      padding: 0.5rem 0.9rem;
+      border-radius: 10px;
+      border: 1px solid #555;
+      background: transparent;
+      color: #eee;
+      font-size: 0.95rem;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #snooze-btns button:active { transform: scale(0.96); }
+    #snooze-status {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.85rem;
+      color: #f39c12;
+    }
+    #snooze-cancel-btn {
+      background: none;
+      border: none;
+      color: #7eb8f7;
+      font-size: 0.85rem;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
     /* Token setup screen */
     #setup {
       display: flex;
@@ -305,6 +353,21 @@
       </div>
     </div>
     <div id="error-msg"></div>
+    <div id="snooze-wrap" class="hidden">
+      <div id="snooze-controls">
+        <span class="snooze-label">Snooze "still open" alerts:</span>
+        <div id="snooze-btns">
+          <button data-min="30">30m</button>
+          <button data-min="60">1h</button>
+          <button data-min="120">2h</button>
+          <button data-min="240">4h</button>
+        </div>
+      </div>
+      <div id="snooze-status" class="hidden">
+        <span id="snooze-text"></span>
+        <button id="snooze-cancel-btn">Cancel</button>
+      </div>
+    </div>
     <button id="logout-btn" style="background:none;border:none;color:#666;font-size:0.8rem;cursor:pointer;margin-top:1rem;">
       Change token
     </button>
@@ -444,6 +507,7 @@
         indicator.textContent = state.toUpperCase();
         indicator.className = state;
         errorMsg.textContent = '';
+        renderSnooze(state, data.snoozed_until);
         if (state !== lastKnownState) {
           lastKnownState = state;
           fetchHistory();
@@ -452,6 +516,53 @@
         errorMsg.textContent = 'Could not reach garage server.';
       }
     }
+
+    const snoozeWrap     = document.getElementById('snooze-wrap');
+    const snoozeControls = document.getElementById('snooze-controls');
+    const snoozeStatus   = document.getElementById('snooze-status');
+    const snoozeText     = document.getElementById('snooze-text');
+
+    function renderSnooze(state, snoozedUntil) {
+      // Only relevant while the door is open.
+      if (state !== 'open') { snoozeWrap.classList.add('hidden'); return; }
+      snoozeWrap.classList.remove('hidden');
+      if (snoozedUntil) {
+        const until = new Date(snoozedUntil.replace(' ', 'T') + 'Z');
+        const mins = Math.max(0, Math.round((until - Date.now()) / 60000));
+        const label = mins >= 60 ? `${Math.floor(mins/60)}h ${mins%60}m` : `${mins}m`;
+        snoozeText.textContent = `Alerts snoozed · ${label} left`;
+        snoozeStatus.classList.remove('hidden');
+        snoozeControls.classList.add('hidden');
+      } else {
+        snoozeStatus.classList.add('hidden');
+        snoozeControls.classList.remove('hidden');
+      }
+    }
+
+    async function setSnooze(minutes) {
+      try {
+        await apiRequest(`/snooze?minutes=${minutes}`, 'POST');
+        errorMsg.textContent = '';
+        refreshStatus();
+        fetchHistory();
+      } catch (e) {
+        errorMsg.textContent = 'Could not snooze alerts.';
+      }
+    }
+
+    async function cancelSnooze() {
+      try {
+        await apiRequest('/snooze', 'DELETE');
+        refreshStatus();
+      } catch (e) {
+        errorMsg.textContent = 'Could not cancel snooze.';
+      }
+    }
+
+    document.querySelectorAll('#snooze-btns button').forEach(btn => {
+      btn.addEventListener('click', () => setSnooze(parseInt(btn.dataset.min, 10)));
+    });
+    document.getElementById('snooze-cancel-btn').addEventListener('click', cancelSnooze);
 
     async function fetchHistory() {
       try {
@@ -466,6 +577,11 @@
           let label, stateClass;
           if (e.action === 'trigger') {
             label = `<span class="h-user">${e.user}</span> <span class="h-desc">triggered</span>`;
+            stateClass = '';
+          } else if (e.action === 'snooze') {
+            const mins = parseInt(e.state, 10);
+            const dur = mins >= 60 ? `${Math.floor(mins/60)}h${mins%60 ? ' '+(mins%60)+'m' : ''}` : `${mins}m`;
+            label = `<span class="h-user">${e.user}</span> <span class="h-desc">snoozed alerts (${dur})</span>`;
             stateClass = '';
           } else {
             const src = e.user === 'physical' ? 'physical' : `via ${e.user}`;

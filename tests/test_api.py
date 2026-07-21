@@ -34,6 +34,7 @@ def isolate(monkeypatch, tmp_path):
     # Reset shared state between tests
     api_module._mock_state["status"] = "closed"
     api_module._trigger_time["at"] = None
+    api_module._snooze["until"] = None
     yield
 
 
@@ -159,3 +160,69 @@ class TestHistory:
         client.post("/api/trigger", headers=AUTH)
         event = client.get("/api/history", headers=AUTH).json()[0]
         assert {"timestamp", "user", "action", "state"} == set(event.keys())
+
+
+# ---------------------------------------------------------------------------
+# Snooze
+# ---------------------------------------------------------------------------
+
+from datetime import datetime, timedelta
+
+
+class TestSnooze:
+    def test_requires_auth(self, client):
+        assert client.post("/api/snooze?minutes=60").status_code == 401
+        assert client.post("/api/snooze?minutes=60", headers=BAD_AUTH).status_code == 401
+        assert client.delete("/api/snooze").status_code == 401
+
+    def test_snooze_sets_state(self, client):
+        assert api_module.is_snoozed() is False
+        r = client.post("/api/snooze?minutes=120", headers=AUTH)
+        assert r.status_code == 200
+        assert r.json()["minutes"] == 120
+        assert api_module.is_snoozed() is True
+
+    def test_status_reflects_snooze(self, client):
+        assert client.get("/api/status", headers=AUTH).json()["snoozed_until"] is None
+        client.post("/api/snooze?minutes=60", headers=AUTH)
+        assert client.get("/api/status", headers=AUTH).json()["snoozed_until"] is not None
+
+    def test_minutes_required(self, client):
+        assert client.post("/api/snooze", headers=AUTH).status_code == 422
+
+    def test_minutes_out_of_range_rejected(self, client):
+        assert client.post("/api/snooze?minutes=0", headers=AUTH).status_code == 422
+        assert client.post("/api/snooze?minutes=721", headers=AUTH).status_code == 422
+        assert api_module.is_snoozed() is False
+
+    def test_cancel_clears_snooze(self, client):
+        client.post("/api/snooze?minutes=60", headers=AUTH)
+        assert api_module.is_snoozed() is True
+        r = client.delete("/api/snooze", headers=AUTH)
+        assert r.status_code == 200
+        assert r.json()["snoozed_until"] is None
+        assert api_module.is_snoozed() is False
+
+    def test_snooze_logged_to_history(self, client):
+        client.post("/api/snooze?minutes=90", headers=AUTH)
+        event = client.get("/api/history", headers=AUTH).json()[0]
+        assert event["action"] == "snooze"
+        assert event["user"] == "TestUser"
+        assert event["state"] == "90"
+
+    def test_expired_snooze_reads_as_inactive(self, client):
+        api_module._snooze["until"] = datetime.utcnow() - timedelta(minutes=1)
+        assert api_module.is_snoozed() is False
+        assert client.get("/api/status", headers=AUTH).json()["snoozed_until"] is None
+
+    def test_state_change_to_closed_clears_snooze(self, client):
+        """A confirmed close (GPIO callback path) should drop an active snooze."""
+        client.post("/api/snooze?minutes=60", headers=AUTH)
+        assert api_module.is_snoozed() is True
+        api_module._on_state_change("closed")
+        assert api_module.is_snoozed() is False
+
+    def test_state_change_to_open_keeps_snooze(self, client):
+        client.post("/api/snooze?minutes=60", headers=AUTH)
+        api_module._on_state_change("open")
+        assert api_module.is_snoozed() is True

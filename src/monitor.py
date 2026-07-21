@@ -20,6 +20,8 @@ async def monitor_door(
     mock: bool = False,
     detect_changes: bool = True,
     get_opened_at_fn: Callable[[], datetime | None] | None = None,
+    is_snoozed_fn: Callable[[], bool] | None = None,
+    clear_snooze_fn: Callable[[], None] | None = None,
 ):
     """
     Background task that:
@@ -66,13 +68,16 @@ async def monitor_door(
                     else:
                         elapsed = datetime.utcnow() - door_opened_at
                         since_last = (datetime.utcnow() - last_alert_at) if last_alert_at else elapsed
-                        if elapsed >= timedelta(minutes=alert_minutes) and since_last >= timedelta(minutes=alert_minutes):
+                        snoozed = is_snoozed_fn() if is_snoozed_fn else False
+                        if not snoozed and elapsed >= timedelta(minutes=alert_minutes) and since_last >= timedelta(minutes=alert_minutes):
                             notify_fn(f"{prefix}Garage door has been open for {int(elapsed.total_seconds() // 60)} minutes!")
                             logger.warning(f"Door open alert sent after {elapsed}")
                             last_alert_at = datetime.utcnow()
                 else:
                     door_opened_at = None
                     last_alert_at = None
+                    if clear_snooze_fn:
+                        clear_snooze_fn()
 
             else:
                 # --- Event-driven mode (real hardware): only handle N-minutes alert ---
@@ -80,7 +85,8 @@ async def monitor_door(
                 if opened_at is not None:
                     elapsed = datetime.utcnow() - opened_at
                     since_last = (datetime.utcnow() - last_alert_at) if last_alert_at else elapsed
-                    if elapsed >= timedelta(minutes=alert_minutes) and since_last >= timedelta(minutes=alert_minutes):
+                    snoozed = is_snoozed_fn() if is_snoozed_fn else False
+                    if not snoozed and elapsed >= timedelta(minutes=alert_minutes) and since_last >= timedelta(minutes=alert_minutes):
                         notify_fn(f"Garage door has been open for {int(elapsed.total_seconds() // 60)} minutes!")
                         logger.warning(f"Door open alert sent after {elapsed}")
                         last_alert_at = datetime.utcnow()
